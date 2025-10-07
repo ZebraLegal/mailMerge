@@ -71,16 +71,27 @@ def generate_empty_data_file(template_fields: List[str], output_path: Optional[s
 def open_file_in_system(file_path: str) -> None:
     """
     Open a file in the system's default application.
+    Only works in local environments, not in cloud deployments.
     
     Args:
         file_path: Path to the file to open
     """
-    if platform.system() == "Darwin":
-        subprocess.run(["open", file_path])
-    elif platform.system() == "Windows":
-        subprocess.run(["start", str(file_path)], shell=True)
-    elif platform.system() == "Linux":
-        subprocess.run(["xdg-open", str(file_path)])
+    try:
+        # Check if we're running in a cloud environment
+        import os
+        if os.getenv('STREAMLIT_CLOUD') or os.getenv('STREAMLIT_SERVER_HEADLESS'):
+            # Don't try to open files in cloud environments
+            return
+        
+        if platform.system() == "Darwin":
+            subprocess.run(["open", file_path])
+        elif platform.system() == "Windows":
+            subprocess.run(["start", str(file_path)], shell=True)
+        elif platform.system() == "Linux":
+            subprocess.run(["xdg-open", str(file_path)])
+    except Exception:
+        # Silently fail if we can't open the file
+        pass
 
 
 def create_safe_filename(prefix: str, primary_value: str, secondary_value: str = "") -> str:

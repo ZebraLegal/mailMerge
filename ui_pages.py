@@ -249,7 +249,16 @@ def render_output_settings_page():
     
     # Output directory and filename settings
     from os.path import expanduser
-    default_base = Path(expanduser("~/Desktop"))
+    import os
+    
+    # Use different base directory for cloud vs local environments
+    if os.getenv('STREAMLIT_CLOUD') or os.getenv('STREAMLIT_SERVER_HEADLESS'):
+        # Cloud environment - use temp directory
+        default_base = Path("/tmp/mailmerge_output")
+    else:
+        # Local environment - use Desktop
+        default_base = Path(expanduser("~/Desktop"))
+    
     prefix = st.text_input("Voorlooptekst voor bestandsnaam (bv. 'Angel Subscription Letter'):", value="Document")
     output_dir = default_base / prefix
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -291,17 +300,21 @@ def render_output_settings_page():
                 
                 st.success(f"{documents_generated} documenten succesvol gegenereerd in map: {output_dir}")
                 
-                # Open output directory
+                # Open output directory (only in local environments)
                 try:
                     from streamlit import runtime
                     is_local = runtime.exists()
+                    # Additional check for cloud environments
+                    import os
+                    is_cloud = os.getenv('STREAMLIT_CLOUD') or os.getenv('STREAMLIT_SERVER_HEADLESS')
+                    is_local = is_local and not is_cloud
                 except Exception:
                     is_local = False
                 
                 if is_local:
                     open_file_in_system(str(output_dir))
                 else:
-                    st.info(f"Bestanden staan in: {output_dir}")
+                    st.info(f"📁 Documenten zijn gegenereerd en opgeslagen in de cloud. Download ze via de browser of gebruik de lokale versie voor directe toegang tot bestanden.")
 
 
 def render_single_document_page():
