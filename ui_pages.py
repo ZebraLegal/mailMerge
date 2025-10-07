@@ -286,7 +286,7 @@ def render_output_settings_page():
                     st.stop()
                 
                 # Generate documents
-                documents_generated = generate_documents_batch(
+                documents_generated, generated_files = generate_documents_batch(
                     uploaded_template,
                     df_data,
                     st.session_state.get('field_mapping', {}),
@@ -298,23 +298,63 @@ def render_output_settings_page():
                     target_lang
                 )
                 
-                st.success(f"{documents_generated} documenten succesvol gegenereerd in map: {output_dir}")
+                st.success(f"{documents_generated} documenten succesvol gegenereerd!")
+                
+                # Show download options for cloud environments
+                import os
+                is_cloud = os.getenv('STREAMLIT_CLOUD') or os.getenv('STREAMLIT_SERVER_HEADLESS')
+                
+                if is_cloud and generated_files:
+                    st.subheader("📥 Download gegenereerde documenten")
+                    st.info("Documenten zijn gegenereerd in de cloud. Download ze hieronder:")
+                    
+                    # Create a zip file with all documents
+                    import zipfile
+                    import io
+                    
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                        for file_path in generated_files:
+                            if file_path.exists():
+                                zip_file.write(file_path, file_path.name)
+                    
+                    zip_buffer.seek(0)
+                    
+                    st.download_button(
+                        label=f"📦 Download alle {documents_generated} documenten (ZIP)",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"{prefix}_documents_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.zip",
+                        mime="application/zip"
+                    )
+                    
+                    # Individual download buttons
+                    st.subheader("📄 Individuele downloads")
+                    for i, file_path in enumerate(generated_files[:5]):  # Show first 5
+                        if file_path.exists():
+                            with open(file_path, 'rb') as f:
+                                file_data = f.read()
+                            st.download_button(
+                                label=f"📄 {file_path.name}",
+                                data=file_data,
+                                file_name=file_path.name,
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                key=f"download_{i}"
+                            )
+                    
+                    if len(generated_files) > 5:
+                        st.info(f"... en {len(generated_files) - 5} meer documenten (gebruik de ZIP download)")
+                else:
+                    st.info(f"Documenten opgeslagen in: {output_dir}")
                 
                 # Open output directory (only in local environments)
-                try:
-                    from streamlit import runtime
-                    is_local = runtime.exists()
-                    # Additional check for cloud environments
-                    import os
-                    is_cloud = os.getenv('STREAMLIT_CLOUD') or os.getenv('STREAMLIT_SERVER_HEADLESS')
-                    is_local = is_local and not is_cloud
-                except Exception:
-                    is_local = False
-                
-                if is_local:
-                    open_file_in_system(str(output_dir))
-                else:
-                    st.info(f"📁 Documenten zijn gegenereerd en opgeslagen in de cloud. Download ze via de browser of gebruik de lokale versie voor directe toegang tot bestanden.")
+                if not is_cloud:
+                    try:
+                        from streamlit import runtime
+                        is_local = runtime.exists()
+                        if is_local:
+                            open_file_in_system(str(output_dir))
+                    except Exception:
+                        pass
 
 
 def render_single_document_page():

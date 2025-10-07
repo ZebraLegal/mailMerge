@@ -9,7 +9,7 @@ import platform
 import subprocess
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from io import BytesIO
 
 import pandas as pd
@@ -197,7 +197,7 @@ def generate_documents_batch(
     primary_column: str,
     secondary_column: str,
     target_lang: str = "UK"
-) -> int:
+) -> Tuple[int, List[Path]]:
     """
     Generate multiple documents from template and data.
     
@@ -213,7 +213,7 @@ def generate_documents_batch(
         target_lang: Target language for formatting
         
     Returns:
-        Number of documents generated
+        Tuple of (number of documents generated, list of generated file paths)
     """
     uploaded_template.seek(0)
     
@@ -228,6 +228,7 @@ def generate_documents_batch(
     rows_all_with_total = rows_all + [total_row]
     
     documents_generated = 0
+    generated_files = []
     
     for index, row in df_data.iterrows():
         doc = DocxTemplate(template_path)
@@ -255,9 +256,10 @@ def generate_documents_batch(
         
         # Save the document
         doc.save(filepath)
+        generated_files.append(filepath)
         documents_generated += 1
     
-    return documents_generated
+    return documents_generated, generated_files
 
 
 def validate_template_before_generation(uploaded_template) -> List[str]:
