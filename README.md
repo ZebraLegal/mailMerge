@@ -46,3 +46,20 @@ Use double curly braces for field placeholders:
 - **Docker**: Containerized deployment
 - **Local Server**: Run on your own infrastructure
 - **Cloud Platforms**: AWS, Google Cloud, Azure
+
+## Authentication
+
+The application supports optional authentication. To enable it:
+
+1. Use `mailMerge_with_auth.py` instead of `mailMerge.py`
+2. Set a password in Streamlit secrets or environment variables
+3. Users will need to enter the password to access the application
+
+## Contributing
+
+This application was refactored into modular components for better maintainability:
+- `template_processor.py` - Template validation and field extraction
+- `data_handler.py` - Data processing and mapping logic
+- `document_generator.py` - Document creation and rendering
+- `ui_pages.py` - Streamlit page components
+- `auth.py` - Authentication system
