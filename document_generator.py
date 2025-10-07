@@ -79,7 +79,14 @@ def open_file_in_system(file_path: str) -> None:
     try:
         # Check if we're running in a cloud environment
         import os
-        if os.getenv('STREAMLIT_CLOUD') or os.getenv('STREAMLIT_SERVER_HEADLESS'):
+        is_cloud = (
+            os.getenv('STREAMLIT_CLOUD') or 
+            os.getenv('STREAMLIT_SERVER_HEADLESS') or
+            '/home/appuser' in str(file_path) or
+            '/tmp' in str(file_path) or
+            'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', '')
+        )
+        if is_cloud:
             # Don't try to open files in cloud environments
             return
         

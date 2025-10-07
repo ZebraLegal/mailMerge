@@ -252,7 +252,12 @@ def render_output_settings_page():
     import os
     
     # Use different base directory for cloud vs local environments
-    if os.getenv('STREAMLIT_CLOUD') or os.getenv('STREAMLIT_SERVER_HEADLESS'):
+    if (
+        os.getenv('STREAMLIT_CLOUD') or 
+        os.getenv('STREAMLIT_SERVER_HEADLESS') or
+        '/home/appuser' in str(Path.cwd()) or
+        'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', '')
+    ):
         # Cloud environment - use temp directory
         default_base = Path("/tmp/mailmerge_output")
     else:
@@ -302,7 +307,14 @@ def render_output_settings_page():
                 
                 # Show download options for cloud environments
                 import os
-                is_cloud = os.getenv('STREAMLIT_CLOUD') or os.getenv('STREAMLIT_SERVER_HEADLESS')
+                # Check multiple indicators for cloud environment
+                is_cloud = (
+                    os.getenv('STREAMLIT_CLOUD') or 
+                    os.getenv('STREAMLIT_SERVER_HEADLESS') or
+                    '/home/appuser' in str(output_dir) or
+                    '/tmp' in str(output_dir) or
+                    'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', '')
+                )
                 
                 if is_cloud and generated_files:
                     st.subheader("📥 Download gegenereerde documenten")
