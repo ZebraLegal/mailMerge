@@ -147,7 +147,16 @@ def render_template_upload_page():
                     st.info("💡 Download het bestand hierboven en open het handmatig in Excel.")
         
         if st.button("Maak één document (velden invullen in browser)"):
-            st.session_state.single_form_fields = curly
+            # Combine curly fields with selected square fields
+            all_fields = curly.copy()
+            
+            # Add selected square fields
+            square_fields = st.session_state.get("square_fields", pd.DataFrame())
+            if not square_fields.empty:
+                selected_square_fields = square_fields[square_fields["Opnemen als veld?"] == True]["Veldnaam"].tolist()
+                all_fields.extend(selected_square_fields)
+            
+            st.session_state.single_form_fields = all_fields
             st.session_state.uploaded_template_single = uploaded_template
             st.session_state.page = "single"
             st.rerun()

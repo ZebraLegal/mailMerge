@@ -236,6 +236,51 @@ def render_template_preview(uploaded_template, context: Dict[str, Any]) -> str:
     return "\n\n".join(preview_text)
 
 
+def convert_square_to_curly_brackets(template_path: str) -> str:
+    """
+    Convert square bracket fields [field] to curly bracket fields {{field}} in a Word document.
+    
+    Args:
+        template_path: Path to the template file
+        
+    Returns:
+        Path to the converted template file
+    """
+    from docx import Document
+    import re
+    
+    doc = Document(template_path)
+    
+    # Convert square brackets to curly brackets in paragraphs
+    for para in doc.paragraphs:
+        para.text = re.sub(r'\[(.*?)\]', r'{{\1}}', para.text)
+    
+    # Convert in tables
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    para.text = re.sub(r'\[(.*?)\]', r'{{\1}}', para.text)
+    
+    # Convert in headers and footers
+    for section in doc.sections:
+        for hf in [section.header, section.footer]:
+            for para in hf.paragraphs:
+                para.text = re.sub(r'\[(.*?)\]', r'{{\1}}', para.text)
+            for table in hf.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for para in cell.paragraphs:
+                            para.text = re.sub(r'\[(.*?)\]', r'{{\1}}', para.text)
+    
+    # Save converted template
+    converted_path = template_path.replace('.docx', '_converted.docx')
+    doc.save(converted_path)
+    _temp_files.add(converted_path)
+    
+    return converted_path
+
+
 def generate_single_document(uploaded_template, form_data: Dict[str, str]) -> BytesIO:
     """
     Generate a single document from template and form data.
@@ -248,13 +293,38 @@ def generate_single_document(uploaded_template, form_data: Dict[str, str]) -> By
         BytesIO object with the generated document
     """
     uploaded_template.seek(0)
+    
+    # Save uploaded template as temporary file
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp_template:
         shutil.copyfileobj(uploaded_template, tmp_template)
         template_path = tmp_template.name
         _temp_files.add(template_path)
     
-    doc = DocxTemplate(template_path)
-    doc.render(form_data)
+    # Convert square brackets to curly brackets for DocxTemplate compatibility
+    converted_template_path = convert_square_to_curly_brackets(template_path)
+    
+    # Create a mock row from form data for context creation
+    mock_row = pd.Series(form_data)
+    
+    # Create field mapping (form fields map to themselves)
+    field_mapping = {field: field for field in form_data.keys()}
+    
+    # Create empty square fields list (square fields are handled via form_data)
+    square_fields = []
+    
+    # Create context using the same logic as batch generation
+    from data_handler import create_context_from_row
+    context = create_context_from_row(mock_row, field_mapping, square_fields, "UK")
+    
+    # Add form data directly to context for any fields not handled by create_context_from_row
+    for field, value in form_data.items():
+        if field not in context:
+            context[field] = value
+        # Also add row.* alias
+        context[f"row.{field}"] = value
+    
+    doc = DocxTemplate(converted_template_path)
+    doc.render(context)
     
     output = BytesIO()
     doc.save(output)
