@@ -27,13 +27,33 @@ def is_cloud_environment() -> bool:
         True if running in cloud, False otherwise
     """
     import os
-    return (
-        os.getenv('STREAMLIT_CLOUD') or 
-        os.getenv('STREAMLIT_SERVER_HEADLESS') or
-        '/home/appuser' in str(Path.cwd()) or
-        '/tmp' in str(Path.cwd()) or
-        'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', '')
-    )
+    import streamlit as st
+    
+    # Check various cloud environment indicators
+    cloud_indicators = [
+        os.getenv('STREAMLIT_CLOUD'),
+        os.getenv('STREAMLIT_SERVER_HEADLESS'),
+        '/home/appuser' in str(Path.cwd()),
+        '/tmp' in str(Path.cwd()),
+        'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', ''),
+        # Additional checks for Docker/containerized environments
+        os.path.exists('/.dockerenv'),
+        os.getenv('DOCKER_CONTAINER'),
+        # Check if we're in a containerized environment
+        os.path.exists('/proc/1/cgroup') and 'docker' in open('/proc/1/cgroup').read(),
+    ]
+    
+    # Also check if we can access the browser (indicates local environment)
+    try:
+        # In cloud environments, we typically can't open files in system
+        # This is a more reliable way to detect cloud vs local
+        if hasattr(st, '_is_running_with_streamlit'):
+            # If we're running with Streamlit but can't open files, likely cloud
+            return True
+    except:
+        pass
+    
+    return any(cloud_indicators)
 
 
 def render_template_upload_page():
@@ -82,6 +102,20 @@ def render_template_upload_page():
         st.subheader("🟦 Gevonden velden tussen blokhaken")
         if square:
             df = pd.DataFrame({"Veldnaam": square, "Opnemen als veld?": [False]*len(square)})
+            
+            # Add select all/none buttons
+            col1, col2, col3 = st.columns([1, 1, 2])
+            with col1:
+                if st.button("✅ Selecteer alles", key="select_all_square"):
+                    df["Opnemen als veld?"] = [True]*len(square)
+                    st.session_state.square_fields = df
+                    st.rerun()
+            with col2:
+                if st.button("❌ Deselecteer alles", key="deselect_all_square"):
+                    df["Opnemen als veld?"] = [False]*len(square)
+                    st.session_state.square_fields = df
+                    st.rerun()
+            
             edited = st.data_editor(df, use_container_width=True, num_rows="fixed")
             st.session_state.square_fields = edited
         else:
@@ -90,21 +124,27 @@ def render_template_upload_page():
         st.markdown("_Of genereer een leeg databestand op basis van deze velden._")
         
         if st.button("Genereer leeg databestand (.xlsx)"):
-            if is_cloud_environment():
-                # Generate Excel file as BytesIO for download
-                excel_buffer = generate_empty_data_file_bytes(curly)
-                st.success("Leeg databestand gegenereerd! Download hieronder.")
-                st.download_button(
-                    label="📥 Download leeg databestand (.xlsx)",
-                    data=excel_buffer.getvalue(),
-                    file_name="template_data.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            else:
-                # Local environment - open file
-                excel_path = generate_empty_data_file(curly)
-                open_file_in_system(excel_path)
-                st.success("Een leeg databestand is geopend in Excel. Vul de velden aan, sla het bestand op en upload het op de volgende pagina.")
+            # Always generate the Excel file for download
+            excel_buffer = generate_empty_data_file_bytes(curly)
+            st.success("Leeg databestand gegenereerd! Download hieronder.")
+            
+            # Always show download button
+            st.download_button(
+                label="📥 Download leeg databestand (.xlsx)",
+                data=excel_buffer.getvalue(),
+                file_name="template_data.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+            # Only try to open in Excel if we're definitely in a local environment
+            if not is_cloud_environment():
+                try:
+                    # Try to open the file locally as well
+                    excel_path = generate_empty_data_file(curly)
+                    open_file_in_system(excel_path)
+                    st.info("💡 Het bestand is ook geopend in Excel (als je Excel hebt geïnstalleerd).")
+                except Exception as e:
+                    st.info("💡 Download het bestand hierboven en open het handmatig in Excel.")
         
         if st.button("Maak één document (velden invullen in browser)"):
             st.session_state.single_form_fields = curly
