@@ -14,9 +14,26 @@ from data_handler import (
     calculate_totals, reshape_wide_to_rows
 )
 from document_generator import (
-    generate_empty_data_file, open_file_in_system, render_template_preview,
+    generate_empty_data_file, generate_empty_data_file_bytes, open_file_in_system, render_template_preview,
     generate_single_document, generate_documents_batch, validate_template_before_generation
 )
+
+
+def is_cloud_environment() -> bool:
+    """
+    Check if the application is running in a cloud environment.
+    
+    Returns:
+        True if running in cloud, False otherwise
+    """
+    import os
+    return (
+        os.getenv('STREAMLIT_CLOUD') or 
+        os.getenv('STREAMLIT_SERVER_HEADLESS') or
+        '/home/appuser' in str(Path.cwd()) or
+        '/tmp' in str(Path.cwd()) or
+        'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', '')
+    )
 
 
 def render_template_upload_page():
@@ -73,9 +90,21 @@ def render_template_upload_page():
         st.markdown("_Of genereer een leeg databestand op basis van deze velden._")
         
         if st.button("Genereer leeg databestand (.xlsx)"):
-            excel_path = generate_empty_data_file(curly)
-            open_file_in_system(excel_path)
-            st.success("Een leeg databestand is geopend in Excel. Vul de velden aan, sla het bestand op en upload het op de volgende pagina.")
+            if is_cloud_environment():
+                # Generate Excel file as BytesIO for download
+                excel_buffer = generate_empty_data_file_bytes(curly)
+                st.success("Leeg databestand gegenereerd! Download hieronder.")
+                st.download_button(
+                    label="📥 Download leeg databestand (.xlsx)",
+                    data=excel_buffer.getvalue(),
+                    file_name="template_data.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                # Local environment - open file
+                excel_path = generate_empty_data_file(curly)
+                open_file_in_system(excel_path)
+                st.success("Een leeg databestand is geopend in Excel. Vul de velden aan, sla het bestand op en upload het op de volgende pagina.")
         
         if st.button("Maak één document (velden invullen in browser)"):
             st.session_state.single_form_fields = curly
@@ -252,12 +281,7 @@ def render_output_settings_page():
     import os
     
     # Use different base directory for cloud vs local environments
-    if (
-        os.getenv('STREAMLIT_CLOUD') or 
-        os.getenv('STREAMLIT_SERVER_HEADLESS') or
-        '/home/appuser' in str(Path.cwd()) or
-        'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', '')
-    ):
+    if is_cloud_environment():
         # Cloud environment - use temp directory
         default_base = Path("/tmp/mailmerge_output")
     else:
@@ -306,17 +330,7 @@ def render_output_settings_page():
                 st.success(f"{documents_generated} documenten succesvol gegenereerd!")
                 
                 # Show download options for cloud environments
-                import os
-                # Check multiple indicators for cloud environment
-                is_cloud = (
-                    os.getenv('STREAMLIT_CLOUD') or 
-                    os.getenv('STREAMLIT_SERVER_HEADLESS') or
-                    '/home/appuser' in str(output_dir) or
-                    '/tmp' in str(output_dir) or
-                    'streamlit.app' in os.getenv('STREAMLIT_SERVER_ADDRESS', '')
-                )
-                
-                if is_cloud and generated_files:
+                if is_cloud_environment() and generated_files:
                     st.subheader("📥 Download gegenereerde documenten")
                     st.info("Documenten zijn gegenereerd in de cloud. Download ze hieronder:")
                     
@@ -325,10 +339,15 @@ def render_output_settings_page():
                     import io
                     
                     zip_buffer = io.BytesIO()
-                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zip_file:
                         for file_path in generated_files:
                             if file_path.exists():
-                                zip_file.write(file_path, file_path.name)
+                                try:
+                                    # Read file in chunks to handle large files
+                                    with open(file_path, 'rb') as f:
+                                        zip_file.writestr(file_path.name, f.read())
+                                except Exception as e:
+                                    st.warning(f"Kon bestand {file_path.name} niet toevoegen aan ZIP: {str(e)}")
                     
                     zip_buffer.seek(0)
                     
@@ -359,7 +378,7 @@ def render_output_settings_page():
                     st.info(f"Documenten opgeslagen in: {output_dir}")
                 
                 # Open output directory (only in local environments)
-                if not is_cloud:
+                if not is_cloud_environment():
                     try:
                         from streamlit import runtime
                         is_local = runtime.exists()

@@ -8,6 +8,8 @@ import shutil
 import platform
 import subprocess
 import re
+import os
+import atexit
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from io import BytesIO
@@ -22,6 +24,22 @@ from data_handler import (
     create_context_from_row, calculate_totals, normalize_column_names,
     format_field_value, try_parse_date, format_date_long
 )
+
+# Global set to track temporary files for cleanup
+_temp_files = set()
+
+def cleanup_temp_files():
+    """Clean up all tracked temporary files."""
+    for temp_file in _temp_files.copy():
+        try:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+            _temp_files.discard(temp_file)
+        except Exception:
+            pass  # Silently ignore cleanup errors
+
+# Register cleanup function to run on exit
+atexit.register(cleanup_temp_files)
 
 
 def generate_empty_data_file(template_fields: List[str], output_path: Optional[str] = None) -> str:
@@ -44,6 +62,7 @@ def generate_empty_data_file(template_fields: List[str], output_path: Optional[s
     if output_path is None:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmpfile:
             output_path = tmpfile.name
+            _temp_files.add(output_path)
     
     df_empty.to_excel(output_path, index=False)
     
@@ -66,6 +85,53 @@ def generate_empty_data_file(template_fields: List[str], output_path: Optional[s
     wb.save(output_path)
     
     return output_path
+
+
+def generate_empty_data_file_bytes(template_fields: List[str]) -> BytesIO:
+    """
+    Generate an empty Excel file with template fields as columns as BytesIO.
+    For use in cloud environments where file downloads are needed.
+    
+    Args:
+        template_fields: List of template field names
+        
+    Returns:
+        BytesIO object with the Excel file data
+    """
+    import openpyxl
+    from openpyxl.styles import Alignment
+    from openpyxl.worksheet.views import Selection
+    
+    df_empty = pd.DataFrame(columns=template_fields)
+    
+    # Create BytesIO buffer
+    output_buffer = BytesIO()
+    df_empty.to_excel(output_buffer, index=False)
+    
+    # Format the Excel file
+    output_buffer.seek(0)
+    wb = openpyxl.load_workbook(output_buffer)
+    ws = wb.active
+    
+    # Set column width to approximately 20 Excel characters
+    for col in ws.columns:
+        col_letter = col[0].column_letter
+        ws.column_dimensions[col_letter].width = 20
+    
+    # Set alignment in each cell to left and top
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(horizontal="left", vertical="top")
+    
+    # Set focus/cursor on A2 when opening
+    ws.sheet_view.selection = [Selection(activeCell="A2", sqref="A2")]
+    
+    # Save to BytesIO
+    output_buffer = BytesIO()
+    wb.save(output_buffer)
+    output_buffer.seek(0)
+    
+    return output_buffer
 
 
 def open_file_in_system(file_path: str) -> None:
@@ -185,6 +251,7 @@ def generate_single_document(uploaded_template, form_data: Dict[str, str]) -> By
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp_template:
         shutil.copyfileobj(uploaded_template, tmp_template)
         template_path = tmp_template.name
+        _temp_files.add(template_path)
     
     doc = DocxTemplate(template_path)
     doc.render(form_data)
@@ -228,6 +295,7 @@ def generate_documents_batch(
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp_template:
         shutil.copyfileobj(uploaded_template, tmp_template)
         template_path = tmp_template.name
+        _temp_files.add(template_path)
     
     # Calculate totals for full dataset
     total_row = calculate_totals(df_data)
