@@ -24,3 +24,4 @@ streamlit run mailMerge_with_auth.py --server.address=0.0.0.0 --server.port=8501
 - Deploy on your company's internal network
 - Use VPN for remote access
 - Complete privacy and control
+

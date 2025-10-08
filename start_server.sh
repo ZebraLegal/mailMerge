@@ -14,3 +14,4 @@ streamlit run mailMerge.py \
     --server.headless=true \
     --server.enableCORS=false \
     --server.enableXsrfProtection=false
+

@@ -129,3 +129,4 @@ def clean_placeholder_elements(doc):
     for p in list(doc.docx.paragraphs):  # iterate over a copy for safe removal
         if p._element in placeholder_elems and not p.text.strip():
             p._element.getparent().remove(p._element)
+
