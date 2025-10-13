@@ -340,7 +340,8 @@ def generate_documents_batch(
     prefix: str,
     primary_column: str,
     secondary_column: str,
-    target_lang: str = "UK"
+    target_lang: str = "UK",
+    return_bytes: bool = False
 ) -> Tuple[int, List[Path]]:
     """
     Generate multiple documents from template and data.
@@ -355,9 +356,10 @@ def generate_documents_batch(
         primary_column: Primary column for filename
         secondary_column: Secondary column for filename
         target_lang: Target language for formatting
+        return_bytes: If True, return BytesIO objects instead of file paths
         
     Returns:
-        Tuple of (number of documents generated, list of generated file paths)
+        Tuple of (number of documents generated, list of generated file paths or BytesIO objects)
     """
     uploaded_template.seek(0)
     
@@ -397,11 +399,24 @@ def generate_documents_batch(
             row.get(primary_column, ""),
             row.get(secondary_column, "")
         )
-        filepath = output_dir / filename.replace("_", " ")
         
-        # Save the document
-        doc.save(filepath)
-        generated_files.append(filepath)
+        if return_bytes:
+            # Save to BytesIO for cloud environments
+            output_buffer = BytesIO()
+            doc.save(output_buffer)
+            output_buffer.seek(0)
+            
+            # Store both the BytesIO object and filename for later use
+            generated_files.append({
+                'data': output_buffer,
+                'filename': filename.replace("_", " ")
+            })
+        else:
+            # Save to file system for local environments
+            filepath = output_dir / filename.replace("_", " ")
+            doc.save(filepath)
+            generated_files.append(filepath)
+        
         documents_generated += 1
     
     return documents_generated, generated_files

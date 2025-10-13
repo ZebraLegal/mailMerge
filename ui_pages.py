@@ -364,6 +364,7 @@ def render_output_settings_page():
                     st.stop()
                 
                 # Generate documents
+                is_cloud = is_cloud_environment()
                 documents_generated, generated_files = generate_documents_batch(
                     uploaded_template,
                     df_data,
@@ -373,13 +374,14 @@ def render_output_settings_page():
                     prefix,
                     primary_column,
                     secondary_column,
-                    target_lang
+                    target_lang,
+                    return_bytes=is_cloud
                 )
                 
                 st.success(f"{documents_generated} documenten succesvol gegenereerd!")
                 
                 # Show download options for cloud environments
-                if is_cloud_environment() and generated_files:
+                if is_cloud and generated_files:
                     st.subheader("📥 Download gegenereerde documenten")
                     st.info("Documenten zijn gegenereerd in de cloud. Download ze hieronder:")
                     
@@ -389,14 +391,22 @@ def render_output_settings_page():
                     
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zip_file:
-                        for file_path in generated_files:
-                            if file_path.exists():
-                                try:
-                                    # Read file in chunks to handle large files
-                                    with open(file_path, 'rb') as f:
-                                        zip_file.writestr(file_path.name, f.read())
-                                except Exception as e:
-                                    st.warning(f"Kon bestand {file_path.name} niet toevoegen aan ZIP: {str(e)}")
+                        for file_info in generated_files:
+                            try:
+                                # For cloud environments, file_info is a dict with 'data' and 'filename'
+                                if isinstance(file_info, dict):
+                                    file_data = file_info['data'].getvalue()
+                                    filename = file_info['filename']
+                                else:
+                                    # Fallback for file paths (shouldn't happen in cloud mode)
+                                    with open(file_info, 'rb') as f:
+                                        file_data = f.read()
+                                    filename = file_info.name
+                                
+                                zip_file.writestr(filename, file_data)
+                            except Exception as e:
+                                filename = file_info.get('filename', 'unknown') if isinstance(file_info, dict) else str(file_info)
+                                st.warning(f"Kon bestand {filename} niet toevoegen aan ZIP: {str(e)}")
                     
                     zip_buffer.seek(0)
                     
@@ -409,22 +419,33 @@ def render_output_settings_page():
                     
                     # Individual download buttons
                     st.subheader("📄 Individuele downloads")
-                    for i, file_path in enumerate(generated_files[:5]):  # Show first 5
-                        if file_path.exists():
-                            with open(file_path, 'rb') as f:
-                                file_data = f.read()
+                    for i, file_info in enumerate(generated_files[:5]):  # Show first 5
+                        try:
+                            if isinstance(file_info, dict):
+                                file_data = file_info['data'].getvalue()
+                                filename = file_info['filename']
+                            else:
+                                # Fallback for file paths
+                                with open(file_info, 'rb') as f:
+                                    file_data = f.read()
+                                filename = file_info.name
+                            
                             st.download_button(
-                                label=f"📄 {file_path.name}",
+                                label=f"📄 {filename}",
                                 data=file_data,
-                                file_name=file_path.name,
+                                file_name=filename,
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 key=f"download_{i}"
                             )
+                        except Exception as e:
+                            filename = file_info.get('filename', 'unknown') if isinstance(file_info, dict) else str(file_info)
+                            st.warning(f"Kon bestand {filename} niet downloaden: {str(e)}")
                     
                     if len(generated_files) > 5:
                         st.info(f"... en {len(generated_files) - 5} meer documenten (gebruik de ZIP download)")
                 else:
                     st.info(f"Documenten opgeslagen in: {output_dir}")
+                    st.caption("💡 De map met gegenereerde documenten wordt automatisch geopend na afloop.")
                 
                 # Open output directory (only in local environments)
                 if not is_cloud_environment():
