@@ -208,15 +208,25 @@ def clean_placeholder_elements(doc):
     Args:
         doc: DocxTemplate document object
     """
-    # Clean empty paragraphs
-    placeholder_elems = set()
-    for p in doc.docx.paragraphs:
-        if re.search(r"\{\{.*?\}\}|\[.*?\]", p.text):
-            placeholder_elems.add(p._element)
+    # Clean empty paragraphs - more aggressive approach
+    paragraphs_to_remove = []
+    for i, p in enumerate(doc.docx.paragraphs):
+        # Remove paragraphs that are empty or contain only Jinja code remnants
+        if not p.text.strip():
+            paragraphs_to_remove.append(i)
+        elif re.search(r"^\s*\{[#%].*?[#%]\}\s*$", p.text.strip()):
+            # Remove Jinja comments and control blocks that are now empty
+            paragraphs_to_remove.append(i)
+        elif re.search(r"^\s*\{%\s*(macro|set|if|for|endmacro|endif|endfor).*?%\}\s*$", p.text.strip()):
+            # Remove macro definitions and control structures
+            paragraphs_to_remove.append(i)
     
-    for p in list(doc.docx.paragraphs):  # iterate over a copy for safe removal
-        if p._element in placeholder_elems and not p.text.strip():
-            p._element.getparent().remove(p._element)
+    # Remove paragraphs in reverse order
+    for i in reversed(paragraphs_to_remove):
+        try:
+            doc.docx.paragraphs[i]._element.getparent().remove(doc.docx.paragraphs[i]._element)
+        except Exception:
+            pass
     
     # Clean empty table rows - more aggressive approach
     for table in doc.docx.tables:
