@@ -228,22 +228,24 @@ def clean_placeholder_elements(doc):
         except Exception:
             pass
     
-    # Clean empty table rows - more aggressive approach
+    # Clean empty table rows - be very careful with signature blocks
     for table in doc.docx.tables:
         rows_to_remove = []
         for row_idx, row in enumerate(table.rows):
-            # Check if all cells in the row are empty or contain only whitespace/signature lines
-            all_empty_or_signature_only = True
+            # Check if all cells in the row are completely empty
+            all_empty = True
+            
             for cell in row.cells:
                 cell_text = ' '.join([para.text for para in cell.paragraphs if para.text.strip()])
                 cell_text = cell_text.strip()
                 
-                # Skip if cell has meaningful content (not just signature lines or whitespace)
-                if cell_text and not cell_text.startswith('_________________________') and len(cell_text) > 5:
-                    all_empty_or_signature_only = False
+                if cell_text:
+                    all_empty = False
                     break
             
-            if all_empty_or_signature_only:
+            # Only remove rows that are completely empty
+            # Don't remove any rows with any content at all
+            if all_empty:
                 rows_to_remove.append(row_idx)
         
         # Remove empty rows (in reverse order to maintain indices)
