@@ -203,11 +203,12 @@ def render_text(s: str) -> str:
 
 def clean_placeholder_elements(doc):
     """
-    Remove empty paragraphs that were placeholders from the document.
+    Remove empty paragraphs and table rows that were placeholders from the document.
     
     Args:
         doc: DocxTemplate document object
     """
+    # Clean empty paragraphs
     placeholder_elems = set()
     for p in doc.docx.paragraphs:
         if re.search(r"\{\{.*?\}\}|\[.*?\]", p.text):
@@ -216,4 +217,30 @@ def clean_placeholder_elements(doc):
     for p in list(doc.docx.paragraphs):  # iterate over a copy for safe removal
         if p._element in placeholder_elems and not p.text.strip():
             p._element.getparent().remove(p._element)
+    
+    # Clean empty table rows - more aggressive approach
+    for table in doc.docx.tables:
+        rows_to_remove = []
+        for row_idx, row in enumerate(table.rows):
+            # Check if all cells in the row are empty or contain only whitespace/signature lines
+            all_empty_or_signature_only = True
+            for cell in row.cells:
+                cell_text = ' '.join([para.text for para in cell.paragraphs if para.text.strip()])
+                cell_text = cell_text.strip()
+                
+                # Skip if cell has meaningful content (not just signature lines or whitespace)
+                if cell_text and not cell_text.startswith('_________________________') and len(cell_text) > 5:
+                    all_empty_or_signature_only = False
+                    break
+            
+            if all_empty_or_signature_only:
+                rows_to_remove.append(row_idx)
+        
+        # Remove empty rows (in reverse order to maintain indices)
+        for row_idx in reversed(rows_to_remove):
+            try:
+                table._tbl.remove(table.rows[row_idx]._tr)
+            except Exception:
+                # If removal fails, just skip this row
+                pass
 
