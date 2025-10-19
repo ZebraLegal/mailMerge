@@ -65,32 +65,58 @@ def render_template_upload_page():
     if uploaded_template:
         curly, square = extract_placeholders(uploaded_template)
         
-        # Validate template placeholders
-        validation_results = validate_template_placeholders(curly)
+        # Check if template uses macros
+        from template_processor import detect_macros
+        has_macros = detect_macros(uploaded_template)
         
-        if validation_results['invalid']:
-            st.error(
-                "❌ Ongeldige variabelenamen gevonden:\n\n- " +
-                "\n- ".join(validation_results['invalid']) +
-                "\n\n🔧 Gebruik alleen letters, cijfers, underscores en optioneel punt-notatie (bv. `row.Naam`)."
-            )
-        
-        if validation_results['control_in_print']:
-            st.error(
-                "❌ Controle-structuren (for/if) gevonden binnen `{{ ... }}`:\n\n- " +
-                "\n- ".join(validation_results['control_in_print']) +
-                "\n\n🔧 Gebruik `{% ... %}` voor for/if/else/endfor/endif in plaats van `{{ ... }}`."
-            )
-        
-        if validation_results['unclosed']:
-            st.error(
-                "⚠️ Mogelijk onvolledige of losse placeholders:\n\n- " +
-                "\n- ".join(validation_results['unclosed']) +
-                "\n\n🔧 Controleer of alle Jinja-tags correct zijn geopend en gesloten."
-            )
-        
-        if any(validation_results.values()):
-            st.stop()
+        if has_macros:
+            st.info("🔧 **Macro-gedetecteerd**: Dit template gebruikt Jinja-macros. De validatie wordt aangepast voor complexe templates.")
+            
+            # For macro templates, only validate basic syntax errors
+            basic_validation_results = {
+                'invalid': [],
+                'control_in_print': [],
+                'unclosed': []
+            }
+            
+            for field in curly:
+                # Only check for basic syntax errors, not complex field validation
+                if field.strip().lower().startswith("note:") or field.strip().endswith("if"):
+                    basic_validation_results['unclosed'].append(field)
+            
+            if basic_validation_results['unclosed']:
+                st.warning(
+                    "⚠️ Mogelijk onvolledige placeholders gevonden:\n\n- " +
+                    "\n- ".join(basic_validation_results['unclosed']) +
+                    "\n\n🔧 Controleer of alle Jinja-tags correct zijn geopend en gesloten."
+                )
+        else:
+            # Standard validation for non-macro templates
+            validation_results = validate_template_placeholders(curly)
+            
+            if validation_results['invalid']:
+                st.error(
+                    "❌ Ongeldige variabelenamen gevonden:\n\n- " +
+                    "\n- ".join(validation_results['invalid']) +
+                    "\n\n🔧 Gebruik alleen letters, cijfers, underscores en optioneel punt-notatie (bv. `row.Naam`)."
+                )
+            
+            if validation_results['control_in_print']:
+                st.error(
+                    "❌ Controle-structuren (for/if) gevonden binnen `{{ ... }}`:\n\n- " +
+                    "\n- ".join(validation_results['control_in_print']) +
+                    "\n\n🔧 Gebruik `{% ... %}` voor for/if/else/endfor/endif in plaats van `{{ ... }}`."
+                )
+            
+            if validation_results['unclosed']:
+                st.error(
+                    "⚠️ Mogelijk onvolledige of losse placeholders:\n\n- " +
+                    "\n- ".join(validation_results['unclosed']) +
+                    "\n\n🔧 Controleer of alle Jinja-tags correct zijn geopend en gesloten."
+                )
+            
+            if any(validation_results.values()):
+                st.stop()
         
         # Display found fields
         st.subheader("🔍 Gevonden velden tussen accolades")
@@ -271,16 +297,25 @@ def render_preview_page():
     except Exception:
         curly_fields = []
     
-    from template_processor import is_valid_jinja_var
-    invalid_placeholders = [f for f in curly_fields if not is_valid_jinja_var(f)]
+    # Check if template uses macros
+    from template_processor import detect_macros
+    has_macros = detect_macros(uploaded_template)
     
-    if invalid_placeholders:
-        st.error(
-            "❌ Je template bevat ongeldige Jinja-plaats-houders (bijv. spaties of vreemde tekens):\n\n- " +
-            "\n- ".join(invalid_placeholders) +
-            "\n\n🔧 Oplossing: vervang spaties en speciale tekens door underscores. Voorbeeld: `{{ Voornaam Klant }}` → `{{ Voornaam_Klant }}`."
-        )
-        st.stop()
+    if has_macros:
+        st.info("🔧 **Macro-gedetecteerd**: Dit template gebruikt Jinja-macros. Complexe validatie wordt overgeslagen.")
+        # Skip complex validation for macro templates
+    else:
+        # Standard validation for non-macro templates
+        from template_processor import is_valid_jinja_var
+        invalid_placeholders = [f for f in curly_fields if not is_valid_jinja_var(f)]
+        
+        if invalid_placeholders:
+            st.error(
+                "❌ Je template bevat ongeldige Jinja-plaats-houders (bijv. spaties of vreemde tekens):\n\n- " +
+                "\n- ".join(invalid_placeholders) +
+                "\n\n🔧 Oplossing: vervang spaties en speciale tekens door underscores. Voorbeeld: `{{ Voornaam Klant }}` → `{{ Voornaam_Klant }}`."
+            )
+            st.stop()
     
     # Prepare context from first data row
     sample_row = df_data.iloc[0]

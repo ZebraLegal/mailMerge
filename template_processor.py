@@ -128,6 +128,47 @@ def is_valid_jinja_var(name: str) -> bool:
     return False
 
 
+def detect_macros(docx_file) -> bool:
+    """
+    Detect if a template uses Jinja macros.
+    
+    Args:
+        docx_file: Uploaded file object or file path
+        
+    Returns:
+        True if template contains macros
+    """
+    doc = Document(docx_file)
+    
+    # Check for macro definitions in paragraphs
+    for para in doc.paragraphs:
+        if re.search(r'\{%\s*macro\s+\w+', para.text):
+            return True
+    
+    # Check for macro definitions in tables
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    if re.search(r'\{%\s*macro\s+\w+', para.text):
+                        return True
+    
+    # Check for macro definitions in headers and footers
+    for section in doc.sections:
+        for hf in [section.header, section.footer]:
+            for para in hf.paragraphs:
+                if re.search(r'\{%\s*macro\s+\w+', para.text):
+                    return True
+            for table in hf.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for para in cell.paragraphs:
+                            if re.search(r'\{%\s*macro\s+\w+', para.text):
+                                return True
+    
+    return False
+
+
 def validate_template_placeholders(curly_fields: List[str]) -> Dict[str, List[str]]:
     """
     Validate template placeholders for common Jinja/docxtpl errors.
