@@ -41,6 +41,14 @@ def is_cloud_environment() -> bool:
         os.getenv('DOCKER_CONTAINER'),
         # Check if we're in a containerized environment
         os.path.exists('/proc/1/cgroup') and 'docker' in open('/proc/1/cgroup').read(),
+        # Check for Streamlit Cloud specific paths
+        '/mount/src/' in str(Path.cwd()),
+        # Check for Heroku
+        os.getenv('DYNO'),
+        # Check for Railway
+        os.getenv('RAILWAY_ENVIRONMENT'),
+        # Check for Render
+        os.getenv('RENDER'),
     ]
     
     # Also check if we can access the browser (indicates local environment)
@@ -162,7 +170,7 @@ def render_template_upload_page():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             
-            # Only try to open in Excel if we're definitely in a local environment
+            # Also save to local directory if not in cloud environment
             if not is_cloud_environment():
                 try:
                     # Try to open the file locally as well
@@ -364,13 +372,15 @@ def render_output_settings_page():
     from os.path import expanduser
     import os
     
-    # Use different base directory for cloud vs local environments
+    # Always use temp directory for cloud environments, Desktop for local
     if is_cloud_environment():
         # Cloud environment - use temp directory
         default_base = Path("/tmp/mailmerge_output")
+        st.info("🌐 Cloud omgeving gedetecteerd - bestanden worden gedownload in plaats van opgeslagen op het bureaublad.")
     else:
         # Local environment - use Desktop
         default_base = Path(expanduser("~/Desktop"))
+        st.info("💻 Lokale omgeving - bestanden worden ook opgeslagen op het bureaublad.")
     
     prefix = st.text_input("Voorlooptekst voor bestandsnaam (bv. 'Angel Subscription Letter'):", value="Document")
     output_dir = default_base / prefix
@@ -388,8 +398,6 @@ def render_output_settings_page():
             st.rerun()
     with col2:
         if st.button("📄 Genereer documenten"):
-            st.caption("📁 De map met gegenereerde documenten wordt automatisch geopend na afloop.")
-            
             if uploaded_template:
                 # Validate template before generation
                 validation_errors = validate_template_before_generation(uploaded_template)
@@ -398,8 +406,7 @@ def render_output_settings_page():
                         st.error(error)
                     st.stop()
                 
-                # Generate documents
-                is_cloud = is_cloud_environment()
+                # Always generate documents with return_bytes=True for download functionality
                 documents_generated, generated_files = generate_documents_batch(
                     uploaded_template,
                     df_data,
@@ -410,15 +417,14 @@ def render_output_settings_page():
                     primary_column,
                     secondary_column,
                     target_lang,
-                    return_bytes=is_cloud
+                    return_bytes=True  # Always return bytes for download
                 )
                 
                 st.success(f"{documents_generated} documenten succesvol gegenereerd!")
                 
-                # Show download options for cloud environments
-                if is_cloud and generated_files:
+                # Always show download options
+                if generated_files:
                     st.subheader("📥 Download gegenereerde documenten")
-                    st.info("Documenten zijn gegenereerd in de cloud. Download ze hieronder:")
                     
                     # Create a zip file with all documents
                     import zipfile
@@ -428,12 +434,12 @@ def render_output_settings_page():
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zip_file:
                         for file_info in generated_files:
                             try:
-                                # For cloud environments, file_info is a dict with 'data' and 'filename'
+                                # file_info is always a dict with 'data' and 'filename' when return_bytes=True
                                 if isinstance(file_info, dict):
                                     file_data = file_info['data'].getvalue()
                                     filename = file_info['filename']
                                 else:
-                                    # Fallback for file paths (shouldn't happen in cloud mode)
+                                    # Fallback for file paths (shouldn't happen with return_bytes=True)
                                     with open(file_info, 'rb') as f:
                                         file_data = f.read()
                                     filename = file_info.name
@@ -445,6 +451,7 @@ def render_output_settings_page():
                     
                     zip_buffer.seek(0)
                     
+                    # Download ZIP file
                     st.download_button(
                         label=f"📦 Download alle {documents_generated} documenten (ZIP)",
                         data=zip_buffer.getvalue(),
@@ -452,37 +459,35 @@ def render_output_settings_page():
                         mime="application/zip"
                     )
                     
-                    # Individual download buttons
-                    st.subheader("📄 Individuele downloads")
-                    for i, file_info in enumerate(generated_files[:5]):  # Show first 5
-                        try:
-                            if isinstance(file_info, dict):
-                                file_data = file_info['data'].getvalue()
-                                filename = file_info['filename']
-                            else:
-                                # Fallback for file paths
-                                with open(file_info, 'rb') as f:
-                                    file_data = f.read()
-                                filename = file_info.name
-                            
-                            st.download_button(
-                                label=f"📄 {filename}",
-                                data=file_data,
-                                file_name=filename,
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                key=f"download_{i}"
-                            )
-                        except Exception as e:
-                            filename = file_info.get('filename', 'unknown') if isinstance(file_info, dict) else str(file_info)
-                            st.warning(f"Kon bestand {filename} niet downloaden: {str(e)}")
-                    
-                    if len(generated_files) > 5:
-                        st.info(f"... en {len(generated_files) - 5} meer documenten (gebruik de ZIP download)")
-                else:
-                    st.info(f"Documenten opgeslagen in: {output_dir}")
-                    st.caption("💡 De map met gegenereerde documenten wordt automatisch geopend na afloop.")
+                    # Individual download buttons (show first 5)
+                    if len(generated_files) > 1:
+                        st.subheader("📄 Individuele downloads")
+                        for i, file_info in enumerate(generated_files[:5]):
+                            try:
+                                if isinstance(file_info, dict):
+                                    file_data = file_info['data'].getvalue()
+                                    filename = file_info['filename']
+                                else:
+                                    # Fallback for file paths
+                                    with open(file_info, 'rb') as f:
+                                        file_data = f.read()
+                                    filename = file_info.name
+                                
+                                st.download_button(
+                                    label=f"📄 {filename}",
+                                    data=file_data,
+                                    file_name=filename,
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    key=f"download_{i}"
+                                )
+                            except Exception as e:
+                                filename = file_info.get('filename', 'unknown') if isinstance(file_info, dict) else str(file_info)
+                                st.warning(f"Kon bestand {filename} niet downloaden: {str(e)}")
+                        
+                        if len(generated_files) > 5:
+                            st.info(f"... en {len(generated_files) - 5} meer documenten (gebruik de ZIP download)")
                 
-                # Open output directory (only in local environments)
+                # Also save to local directory if not in cloud environment
                 if not is_cloud_environment():
                     try:
                         from streamlit import runtime
